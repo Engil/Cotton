@@ -1,0 +1,5 @@
+S src
+PKG irmin.unix
+PKG lwt.unix
+PKG uuidm
+PKG opium

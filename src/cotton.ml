@@ -91,13 +91,18 @@ let format_error error_name error_content =
   let open Ezjsonm in
   `Json (dict [error_name, (string error_content)])
 
-let add_url_handler = post "/url/"
-    begin fun req ->
+let authentified f req =
+  match Univ_map.find (Request.env req) key with
+  | None -> format_error "auth" "You need to be authentified" |> respond' ~code:`Bad_request
+  | Some name -> f name req
+
+let add_url_handler = post "/url/" @@ authentified
+    begin fun name req ->
       link_task () >>= fun t ->
-      match get_all_qp (Request.uri req) ["author";"url"] with
-      | Some [author; url] ->
-        add_link t author url >>= fun uuid ->
-        let link = Link.link url author uuid |> Link.to_json_response in
+      match get_all_qp (Request.uri req) ["url"] with
+      | Some [url] ->
+        add_link t name url >>= fun uuid ->
+        let link = Link.link url name uuid |> Link.to_json_response in
         `Json link |> respond'
       | _ ->
         format_error "param" "missing parameter" |> respond' ~code:`Bad_request
@@ -147,6 +152,7 @@ let get_url_handlers_handler = get "/url/"
 
 let () =
   App.empty
+  |> middleware auth_middleware
   |> add_url_handler
   |> add_token_handler
   |> add_user_handler

@@ -2,12 +2,23 @@ open Lwt
 open Irmin_unix
 open Opium.Std
 open Utils
+open Core_kernel.Std
 
 module LinkStore =
   Irmin_git.FS (Irmin.Contents.Json)(Irmin.Ref.String)(Irmin.Hash.SHA1)
 
 module UserStore =
   Irmin_git.FS (Irmin.Contents.Json)(Irmin.Ref.String)(Irmin.Hash.SHA1)
+
+let config root = Irmin_git.config ~root ~bare:true ()
+
+let config_links = config "/tmp/irmin/links"
+
+let config_users = config "/tmp/irmin/users"
+
+let link_task _ = LinkStore.Repo.create config_links >>= LinkStore.master task
+
+let user_task _ = UserStore.Repo.create config_users >>= UserStore.master task
 
 let add_user t name email password =
   let hashed_password = Bcrypt.hash password |> Bcrypt.string_of_hash in
@@ -21,9 +32,32 @@ let get_user t name =
   UserStore.read_exn (t "Reading user") ["users"; name] >>= fun user ->
   User.of_json user |> Lwt.return
 
+let get_token t token =
+  UserStore.read (t "Reading token") ["token"; token] >>= function
+  | None -> Lwt.return_none
+  | Some json -> find json "name" |> Ezjsonm.get_string |> Lwt.return_some
+
 let check_password t name password =
   get_user t name >>= fun user ->
   Bcrypt.hash_of_string user.password |> Bcrypt.verify password |> Lwt.return
+
+let key = Univ_map.Key.create "user" String.sexp_of_t
+
+let auth_middleware =
+  let filter handler req =
+    match req |> Request.headers |> Cohttp.Header.get_authorization with
+    | Some `Other s ->
+      user_task () >>= fun t ->
+      get_token t s >>= begin function
+      | Some name ->
+        let env = Univ_map.add_exn (Request.env req) key name in
+        let req = Field.fset Request.Fields.env req env in
+        handler req
+      | None ->
+        handler req
+      end
+    | _ -> handler req in
+  Rock.Middleware.create ~name:(Info.of_string "auth for cotton") ~filter
 
 let add_token t name =
   let open Ezjsonm in
@@ -52,16 +86,6 @@ let get_links t =
 let get_link t uuid =
   LinkStore.read_exn (t "Reading link") ["links"; uuid] >>= fun link ->
   Link.of_json uuid link |> Lwt.return
-
-let config root = Irmin_git.config ~root ~bare:true ()
-
-let config_links = config "/tmp/irmin/links"
-
-let config_users = config "/tmp/irmin/users"
-
-let link_task _ = LinkStore.Repo.create config_links >>= LinkStore.master task
-
-let user_task _ = UserStore.Repo.create config_users >>= UserStore.master task
 
 let format_error error_name error_content =
   let open Ezjsonm in

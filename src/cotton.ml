@@ -59,16 +59,6 @@ let auth_middleware =
     | _ -> handler req in
   Rock.Middleware.create ~name:(Info.of_string "auth for cotton") ~filter
 
-let cors_middleware =
-  let open Opium_rock in
-  let filter handler req =
-    handler req >>= fun response ->
-    let headers = Cohttp.Header.add response.Response.headers
-        "Access-Control-Allow-Origin" "*" in
-    Lwt.return { response with headers } in
-  Rock.Middleware.create ~name:(Info.of_string "CORS headers for Opium") ~filter
-
-
 let add_token t name =
   let open Ezjsonm in
   let token = Cryptokit.Random.string Cryptokit.Random.secure_rng 16 |> Digest.to_hex in
@@ -161,9 +151,10 @@ let get_url_handlers_handler = get "/url/"
     end
 
 let () =
+  let open Opium_middleware_extra in
   App.empty
   |> middleware auth_middleware
-  |> middleware cors_middleware
+  |> middleware Cors.cors_middleware
   |> add_url_handler
   |> add_token_handler
   |> add_user_handler

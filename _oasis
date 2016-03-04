@@ -9,4 +9,4 @@ Executable cotton
   Path:       .
   BuildTools: ocamlbuild
   MainIs:     src/cotton.ml
-  BuildDepends: irmin.unix, lwt.unix, uuidm, opium, safepass, cryptokit
+  BuildDepends: irmin.unix, lwt.unix, uuidm, opium, safepass, cryptokit, opium_middleware_extra
